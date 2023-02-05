@@ -21,8 +21,10 @@ import socket
 
 PORT_TO_MAX = 5004
 global client
-SOCKET_HOST = "192.168.2.2"
+IP = "192.168.2.2"
 SOCKET_PORT = 58327
+
+
 
 def get_args():
     parser = argparse.ArgumentParser()
@@ -228,7 +230,8 @@ def main():
 
                 if (datetime.now() < curr_time_f and count >= 30):
                     action = "wave"
-                    s.sendall(action.encode('UTF-8'))
+                    client.send_message(action, 1)
+                    # s.sendall(action.encode('UTF-8'))
                     print("wave detected")
                     count = 0
                     curr_time = datetime.now()
@@ -620,11 +623,14 @@ def draw_info(image, fps, mode, number):
 
 
 if __name__ == '__main__':
-    global s
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.settimeout(None)
-    s.connect((SOCKET_HOST, SOCKET_PORT))
-    s.settimeout(None)
+    # global s
+    # s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    # s.settimeout(None)
+    # s.connect((SOCKET_HOST, SOCKET_PORT))
+    # s.settimeout(None)
+
+    client = udp_client.SimpleUDPClient(IP, PORT_TO_MAX)
+    client.send_message("wave", 1)
     main()
 
 
