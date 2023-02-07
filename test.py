@@ -4,6 +4,7 @@ import argparse
 import itertools
 from collections import Counter
 from collections import deque
+import time
 
 import cv2 as cv
 import numpy as np
@@ -16,14 +17,11 @@ from model import PointHistoryClassifier
 import math
 from datetime import datetime, timedelta
 from pythonosc import udp_client
+from google.protobuf.json_format import MessageToDict
 
-import socket
-
-PORT_TO_MAX = 5004
 global client
+PORT = 5004
 IP = "192.168.2.2"
-SOCKET_PORT = 58327
-
 
 
 def get_args():
@@ -46,6 +44,7 @@ def get_args():
     args = parser.parse_args()
 
     return args
+
 
 def detectOpen(hand_landmarks):
     firstFingerIsOpen = False
@@ -70,6 +69,7 @@ def detectOpen(hand_landmarks):
     else:
         return False
 
+
 def detectUpright(hand_landmarks):
     pointerDistance = math.sqrt((hand_landmarks.landmark[8].x - hand_landmarks.landmark[5].x)**2 + (hand_landmarks.landmark[8].y - hand_landmarks.landmark[5].y)**2)
     middleDistance = math.sqrt((hand_landmarks.landmark[12].x - hand_landmarks.landmark[9].x)**2 + (hand_landmarks.landmark[12].y - hand_landmarks.landmark[9].y)**2)
@@ -82,11 +82,19 @@ def detectUpright(hand_landmarks):
     if (pointerStraight and middleStraight and ringStraight): return True
     else: return False
 
-def detectFront(hand_landmarks):
-    if (hand_landmarks.landmark[17].x > hand_landmarks.landmark[13].x > hand_landmarks.landmark[9].x > hand_landmarks.landmark[5].x) and (hand_landmarks.landmark[18].x > hand_landmarks.landmark[14].x > hand_landmarks.landmark[10].x > hand_landmarks.landmark[6].x) and hand_landmarks.landmark[19].x > hand_landmarks.landmark[15].x > hand_landmarks.landmark[11].x > hand_landmarks.landmark[7].x and hand_landmarks.landmark[20].x > hand_landmarks.landmark[16].x > hand_landmarks.landmark[12].x > hand_landmarks.landmark[8].x:
-        return True
+
+def detectFront(hand_landmarks, results):
+    for idx, hand_handedness in enumerate(results.multi_handedness):
+        handedness_dict = MessageToDict(hand_handedness)
+        handedness = handedness_dict["classification"][0]["label"]
+
+    if (handedness == "Right"):
+        if (hand_landmarks.landmark[17].x > hand_landmarks.landmark[13].x > hand_landmarks.landmark[9].x > hand_landmarks.landmark[5].x) and (hand_landmarks.landmark[18].x > hand_landmarks.landmark[14].x > hand_landmarks.landmark[10].x > hand_landmarks.landmark[6].x) and (hand_landmarks.landmark[19].x > hand_landmarks.landmark[15].x > hand_landmarks.landmark[11].x > hand_landmarks.landmark[7].x) and (hand_landmarks.landmark[20].x > hand_landmarks.landmark[16].x > hand_landmarks.landmark[12].x > hand_landmarks.landmark[8].x):
+            return True
     else:
-        return False
+        if (hand_landmarks.landmark[17].x < hand_landmarks.landmark[13].x < hand_landmarks.landmark[9].x < hand_landmarks.landmark[5].x) and (hand_landmarks.landmark[18].x < hand_landmarks.landmark[14].x < hand_landmarks.landmark[10].x < hand_landmarks.landmark[6].x) and (hand_landmarks.landmark[19].x < hand_landmarks.landmark[15].x < hand_landmarks.landmark[11].x < hand_landmarks.landmark[7].x) and (hand_landmarks.landmark[20].x < hand_landmarks.landmark[16].x < hand_landmarks.landmark[12].x < hand_landmarks.landmark[8].x):
+            return True
+    return False
 
 def main():
     # 引数解析 #################################################################
@@ -148,8 +156,11 @@ def main():
     #  ########################################################################
     mode = 0
     count = 0
+    stopped_i = 0
+    stopped = 0
     curr_time = datetime.now()
     curr_time_f = curr_time + timedelta(seconds = 5)
+    waving = False
 
     while True:
         fps = cvFpsCalc.get()
@@ -219,37 +230,39 @@ def main():
                     point_history_classifier_labels[most_common_fg_id[0][0]],
                 )
 
-                front = detectFront(hand_landmarks)
-                openHand = not(detectOpen(hand_landmarks))
-                upright = detectUpright(hand_landmarks)
+            front = detectFront(hand_landmarks, results)
+            openHand = not(detectOpen(hand_landmarks))
+            upright = detectUpright(hand_landmarks)
 
-                waving = False
-                if (openHand and upright and front and (point_history_classifier_labels[most_common_fg_id[0][0]]=="Clockwise" or point_history_classifier_labels[most_common_fg_id[0][0]]=="Counter Clockwise")):
-                    print(".")
-                    count+=1
-
-                if (datetime.now() < curr_time_f and count >= 30):
-                    action = "wave"
-                    client.send_message(action, 1)
-                    # s.sendall(action.encode('UTF-8'))
-                    print("wave detected")
-                    count = 0
-                    curr_time = datetime.now()
-                    curr_time_f = curr_time + timedelta(seconds = 5)
+            if (openHand and upright and front and (point_history_classifier_labels[most_common_fg_id[0][0]]=="Clockwise" or point_history_classifier_labels[most_common_fg_id[0][0]]=="Counter Clockwise")):
+                print(".")
+                count+=1
+            
+            if (datetime.now() < curr_time_f and count >= 30):
+                if (not(waving)):
+                    client.send_message("/wave",1)
+                    print("wave detected: HI")
                     waving = True
-                    """
-                    SIP0 = [-0.25, 35.5, -2, 126.5, 101, 80.9, -45]
-                    SIP1 = [2.62, 33.5, 0, 127.1, 237.6, 72.6, -57.3]
-                    SIP2 = [-1.4, 29.4, 0, 120, -15, 23.1, -45]
-                    SIP3 = [-14, 30.9, 0, 120, 48.9, 44.6, -45]
-                    SIP4 = [-1.8, 30.9, 0, 120, -78.6, 44.6, -45]
-                    """
+                else:
+                    client.send_message("/wave",1)
+                    print("wave detected: BYE")
+                    waving = False
+                time.sleep(5)
+                count = 0
+                curr_time = datetime.now()
+                curr_time_f = curr_time + timedelta(seconds = 5)
+                
+                # SIP0 = [-0.25, 35.5, -2, 126.5, 101, 80.9, -45]
+                # SIP1 = [2.62, 33.5, 0, 127.1, 237.6, 72.6, -57.3]
+                # SIP2 = [-1.4, 29.4, 0, 120, -15, 23.1, -45]
+                # SIP3 = [-14, 30.9, 0, 120, 48.9, 44.6, -45]
+                # SIP4 = [-1.8, 30.9, 0, 120, -78.6, 44.6, -45]
 
-
-                elif (datetime.now() >= curr_time_f):
-                    curr_time = datetime.now()
-                    curr_time_f = curr_time + timedelta(seconds = 5)
-
+            elif (datetime.now() >= curr_time_f):
+                curr_time = datetime.now()
+                curr_time_f = curr_time + timedelta(seconds = 5)
+                count = 0
+                
         else:
             point_history.append([0, 0])
 
@@ -623,14 +636,5 @@ def draw_info(image, fps, mode, number):
 
 
 if __name__ == '__main__':
-    # global s
-    # s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    # s.settimeout(None)
-    # s.connect((SOCKET_HOST, SOCKET_PORT))
-    # s.settimeout(None)
-
-    client = udp_client.SimpleUDPClient(IP, PORT_TO_MAX)
-    client.send_message("wave", 1)
+    client = udp_client.SimpleUDPClient(IP, PORT)
     main()
-
-
