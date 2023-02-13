@@ -20,6 +20,9 @@ from datetime import datetime, timedelta
 from pythonosc import udp_client
 from google.protobuf.json_format import MessageToDict
 
+global client
+PORT = 5005
+IP = "192.168.2.2"
 
 def get_args():
     parser = argparse.ArgumentParser()
@@ -224,6 +227,7 @@ def main():
                 twirlCount +=1
 
             if twirlCount > 10:
+                client.send_message("/wave", 3)
                 print("twirl now")
                 time.sleep(5)
                 twirlCount = 0
@@ -601,6 +605,5 @@ def draw_info(image, fps, mode, number):
 
 
 if __name__ == '__main__':
+    client = udp_client.SimpleUDPClient(IP, PORT)
     main()
-
-
