@@ -70,6 +70,33 @@ def detectOpen(hand_landmarks):
         return True
 
 
+def detectBack(hand_landmarks, results):
+    for idx, hand_handedness in enumerate(results.multi_handedness):
+        handedness_dict = MessageToDict(hand_handedness)
+        handedness = handedness_dict["classification"][0]["label"]
+
+    if (handedness == "Right"):
+        if (hand_landmarks.landmark[17].x < hand_landmarks.landmark[13].x < hand_landmarks.landmark[9].x < hand_landmarks.landmark[5].x):
+            return True
+    else:
+        if (hand_landmarks.landmark[17].x < hand_landmarks.landmark[13].x < hand_landmarks.landmark[9].x < hand_landmarks.landmark[5].x):
+            return True
+    return False
+
+
+def detectTwirlEnd(hand_landmarks, results):
+    if (detectBack(hand_landmarks, results) and (isNear(hand_landmarks.landmark[8], hand_landmarks.landmark[12]) and isNear(hand_landmarks.landmark[12], hand_landmarks.landmark[16]) and isNear(hand_landmarks.landmark[16], hand_landmarks.landmark[20])) and (hand_landmarks.landmark[4].z > hand_landmarks.landmark[8].z and hand_landmarks.landmark[4].z > hand_landmarks.landmark[12].z and hand_landmarks.landmark[4].z > hand_landmarks.landmark[16].z)):
+        return True
+
+
+def euclideanDistance(a_x, a_y, b_x, b_y):
+    return math.sqrt(math.pow((a_x-b_x),2) + math.pow((a_y-b_y),2))
+
+
+def isNear(fingerOne, fingerTwo):
+    return euclideanDistance(fingerOne.x, fingerOne.y, fingerTwo.x, fingerTwo.y) < .05
+
+
 def detectUpright(hand_landmarks):
     pointerDistance = math.sqrt((hand_landmarks.landmark[8].x - hand_landmarks.landmark[5].x)**2 + (hand_landmarks.landmark[8].y - hand_landmarks.landmark[5].y)**2)
     middleDistance = math.sqrt((hand_landmarks.landmark[12].x - hand_landmarks.landmark[9].x)**2 + (hand_landmarks.landmark[12].y - hand_landmarks.landmark[9].y)**2)
@@ -155,11 +182,11 @@ def main():
 
     #  ########################################################################
     mode = 0
-    count = 0
-    stopped_i = 0
-    stopped = 0
-    curr_time = datetime.now()
-    curr_time_f = curr_time + timedelta(seconds = 5)
+    count_wave = 0
+    count_twirl = 0
+    curr_time_wave = datetime.now()
+    curr_time_twirl = datetime.now()
+    curr_time_wave_f = curr_time_wave + timedelta(seconds = 5)
     waving = False
 
     while True:
@@ -231,15 +258,15 @@ def main():
                     point_history_classifier_labels[most_common_fg_id[0][0]],
                 )
 
-            front = detectFront(hand_landmarks, results)
-            openHand = detectOpen(hand_landmarks)
-            upright = detectUpright(hand_landmarks)
+            # front = detectFront(hand_landmarks, results)
+            # openHand = detectOpen(hand_landmarks)
+            # upright = detectUpright(hand_landmarks)
 
-            if (openHand and upright and front and (point_history_classifier_labels[most_common_fg_id[0][0]]=="Clockwise" or point_history_classifier_labels[most_common_fg_id[0][0]]=="Counter Clockwise")):
+            if (detectOpen(hand_landmarks) and detectUpright(hand_landmarks) and detectFront(hand_landmarks, results) and (point_history_classifier_labels[most_common_fg_id[0][0]]=="Clockwise" or point_history_classifier_labels[most_common_fg_id[0][0]]=="Counter Clockwise")):
                 print(".")
-                count+=1
-            
-            if (datetime.now() < curr_time_f and count >= 30):
+                count_wave+=1
+
+            if (datetime.now() < curr_time_wave_f and count_wave >= 20):
                 if (not(waving)):
                     client.send_message("/wave",1)
                     print("wave detected: HI")
@@ -248,9 +275,9 @@ def main():
                     print("wave detected: BYE")
                 waving = not(waving)
                 time.sleep(5)
-                count = 0
-                curr_time = datetime.now()
-                curr_time_f = curr_time + timedelta(seconds = 5)
+                count_wave = 0
+                curr_time_wave = datetime.now()
+                curr_time_wave_f = curr_time_wave + timedelta(seconds = 5)
                 
                 # SIP0 = [-0.25, 35.5, -2, 126.5, 101, 80.9, -45]
                 # SIP1 = [2.62, 33.5, 0, 127.1, 237.6, 72.6, -57.3]
@@ -258,10 +285,26 @@ def main():
                 # SIP3 = [-14, 30.9, 0, 120, 48.9, 44.6, -45]
                 # SIP4 = [-1.8, 30.9, 0, 120, -78.6, 44.6, -45]
 
-            elif (datetime.now() >= curr_time_f):
-                curr_time = datetime.now()
-                curr_time_f = curr_time + timedelta(seconds = 5)
-                count = 0
+            elif (datetime.now() >= curr_time_wave_f):
+                curr_time_wave = datetime.now()
+                curr_time_wave_f = curr_time_wave + timedelta(seconds = 5)
+                count_wave = 0
+
+            if waving: # when robot is enabled
+            
+                if (detectOpen(hand_landmarks) and detectFront(hand_landmarks, results)):
+                    curr_time_twirl = datetime.now()
+                    count_twirl = 0
+
+                if (detectTwirlEnd(hand_landmarks, results) and curr_time_twirl + timedelta(seconds = 1) > datetime.now()):
+                    print("_")
+                    count_twirl +=1
+
+                if count_twirl > 10:
+                    client.send_message("/wave", 3)
+                    print("twirl now")
+                    time.sleep(5)
+                    count_twirl = 0
                 
         else:
             point_history.append([0, 0])
