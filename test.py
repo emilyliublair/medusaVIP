@@ -85,16 +85,16 @@ def detectBack(hand_landmarks, results):
 
 
 def detectTwirlEnd(hand_landmarks, results):
-    if (detectBack(hand_landmarks, results) and (isNear(hand_landmarks.landmark[8], hand_landmarks.landmark[12]) and isNear(hand_landmarks.landmark[12], hand_landmarks.landmark[16]) and isNear(hand_landmarks.landmark[16], hand_landmarks.landmark[20])) and (hand_landmarks.landmark[4].z > hand_landmarks.landmark[8].z and hand_landmarks.landmark[4].z > hand_landmarks.landmark[12].z and hand_landmarks.landmark[4].z > hand_landmarks.landmark[16].z)):
+    if (detectBack(hand_landmarks, results) and (isNear(hand_landmarks.landmark[8], hand_landmarks.landmark[12], .05) and isNear(hand_landmarks.landmark[12], hand_landmarks.landmark[16], .05) and isNear(hand_landmarks.landmark[16], hand_landmarks.landmark[20]), .05) and (hand_landmarks.landmark[4].z > hand_landmarks.landmark[8].z and hand_landmarks.landmark[4].z > hand_landmarks.landmark[12].z and hand_landmarks.landmark[4].z > hand_landmarks.landmark[16].z)):
         return True
 
 
-def euclideanDistance(a_x, a_y, b_x, b_y):
-    return math.sqrt(math.pow((a_x-b_x),2) + math.pow((a_y-b_y),2))
+def euclideanDistance(a_x, a_y, a_z, b_x, b_y, b_z):
+    return math.sqrt(math.pow((a_x-b_x),2) + math.pow((a_y-b_y),2) + math.pow((a_z-b_z), 2))
 
 
-def isNear(fingerOne, fingerTwo):
-    return euclideanDistance(fingerOne.x, fingerOne.y, fingerTwo.x, fingerTwo.y) < .05
+def isNear(fingerOne, fingerTwo, threshold):
+    return euclideanDistance(fingerOne.x, fingerOne.y, fingerTwo.x, fingerTwo.y, 0, 0) < threshold
 
 
 def detectUpright(hand_landmarks):
@@ -122,6 +122,19 @@ def detectFront(hand_landmarks, results):
         if (hand_landmarks.landmark[17].x < hand_landmarks.landmark[13].x < hand_landmarks.landmark[9].x < hand_landmarks.landmark[5].x) and (hand_landmarks.landmark[18].x < hand_landmarks.landmark[14].x < hand_landmarks.landmark[10].x < hand_landmarks.landmark[6].x) and (hand_landmarks.landmark[19].x < hand_landmarks.landmark[15].x < hand_landmarks.landmark[11].x < hand_landmarks.landmark[7].x) and (hand_landmarks.landmark[20].x < hand_landmarks.landmark[16].x < hand_landmarks.landmark[12].x < hand_landmarks.landmark[8].x):
             return True
     return False
+
+
+def variance(data_y):
+     # Number of observations
+     n = len(data_y)
+     # Mean of the data
+     mean = sum(data_y) / n
+     # Square deviations
+     deviations = [(y - mean) ** 2 for y in data_y]
+     # Variance
+     variance = sum(deviations) / n
+     return variance
+
 
 def main():
     # 引数解析 #################################################################
@@ -176,9 +189,11 @@ def main():
     # 座標履歴 #################################################################
     history_length = 16
     point_history = deque(maxlen=history_length)
+    point_history_pointer = deque(maxlen=history_length)
 
     # フィンガージェスチャー履歴 ################################################
     finger_gesture_history = deque(maxlen=history_length)
+    finger_gesture_history_pointer = deque(maxlen = history_length)
 
     #  ########################################################################
     mode = 0
@@ -188,6 +203,12 @@ def main():
     curr_time_twirl = datetime.now()
     curr_time_wave_f = curr_time_wave + timedelta(seconds = 5)
     waving = False
+    curr_time_swipe = datetime.now()
+    tracker_x = []
+    tracker_y = []
+    tracker_z = []
+    distance = []
+
 
     while True:
         fps = cvFpsCalc.get()
@@ -226,13 +247,30 @@ def main():
                     landmark_list)
                 pre_processed_point_history_list = pre_process_point_history(
                     debug_image, point_history)
+                pre_processed_landmark_list_pointer = pre_process_landmark(landmark_list)
+                pre_processed_point_history_list = pre_process_point_history(
+                    debug_image, point_history)
+                
+                pre_processed_point_history_list_pointer = pre_process_point_history(debug_image, point_history_pointer)
                 # 学習データ保存
                 logging_csv(number, mode, pre_processed_landmark_list,
                             pre_processed_point_history_list)
+                
+                
 
                 # ハンドサイン分類
                 hand_sign_id = keypoint_classifier(pre_processed_landmark_list)
-                point_history.append(landmark_list[8])  # 人差指座標
+                hand_sign_id_pointer = keypoint_classifier(pre_processed_landmark_list_pointer)
+
+                # just pointer for waving
+                point_history_pointer.append(landmark_list[8])
+
+
+                point_history.append(landmark_list[4])
+                point_history.append(landmark_list[8])
+                point_history.append(landmark_list[12])
+                point_history.append(landmark_list[16])
+                point_history.append(landmark_list[20])  # 人差指座標
 
                 # フィンガージェスチャー分類
                 
@@ -241,11 +279,20 @@ def main():
                 if point_history_len == (history_length * 2):
                     finger_gesture_id = point_history_classifier(
                         pre_processed_point_history_list)
+                    
+                finger_gesture_pointer_id = 0
+                point_history_pointer_len = len(pre_processed_point_history_list_pointer)
+                if point_history_pointer_len == (history_length * 2):
+                    finger_gesture_pointer_id = point_history_classifier(pre_processed_point_history_list_pointer)
 
                 # 直近検出の中で最多のジェスチャーIDを算出
                 finger_gesture_history.append(finger_gesture_id)
                 most_common_fg_id = Counter(
                     finger_gesture_history).most_common()
+                
+                finger_gesture_history_pointer.append(finger_gesture_pointer_id)
+                most_common_fg_id_pointer = Counter(finger_gesture_history_pointer).most_common()
+                
 
                 # 描画
                 debug_image = draw_bounding_rect(use_brect, debug_image, brect)
@@ -262,7 +309,7 @@ def main():
             # openHand = detectOpen(hand_landmarks)
             # upright = detectUpright(hand_landmarks)
 
-            if (detectOpen(hand_landmarks) and detectUpright(hand_landmarks) and detectFront(hand_landmarks, results) and (point_history_classifier_labels[most_common_fg_id[0][0]]=="Clockwise" or point_history_classifier_labels[most_common_fg_id[0][0]]=="Counter Clockwise")):
+            if (keypoint_classifier_labels[hand_sign_id] == "Open" and detectUpright(hand_landmarks) and detectFront(hand_landmarks, results) and (point_history_classifier_labels[most_common_fg_id_pointer[0][0]]=="Clockwise" or point_history_classifier_labels[most_common_fg_id_pointer[0][0]]=="Counter Clockwise")):
                 print(".")
                 count_wave+=1
 
@@ -292,7 +339,7 @@ def main():
 
             if waving: # when robot is enabled
             
-                if (detectOpen(hand_landmarks) and detectFront(hand_landmarks, results)):
+                if (keypoint_classifier_labels[hand_sign_id] == "Open" and detectFront(hand_landmarks, results)):
                     curr_time_twirl = datetime.now()
                     count_twirl = 0
 
@@ -300,11 +347,50 @@ def main():
                     print("_")
                     count_twirl +=1
 
-                if count_twirl > 10:
+                if count_twirl > 15:
                     client.send_message("/wave", 3)
                     print("twirl now")
                     time.sleep(5)
                     count_twirl = 0
+                
+                if curr_time_swipe != None and datetime.now() > curr_time_swipe + timedelta(seconds = 3):
+                    curr_time_swipe = None
+                    tracker_x = []
+                    tracker_y = []
+                    tracker_z = []
+                
+                else:
+                    if keypoint_classifier_labels[hand_sign_id] == "Sideways":
+                        if len(tracker_x) == 0:
+                            curr_time_swipe = datetime.now() 
+                        tracker_x.append(hand_landmarks.landmark[8].x)
+                        tracker_y.append(hand_landmarks.landmark[8].y)
+                        tracker_z.append(hand_landmarks.landmark[8].z)
+                        distance.append(euclideanDistance(hand_landmarks.landmark[12].x, hand_landmarks.landmark[12].y, hand_landmarks.landmark[12].z, hand_landmarks.landmark[0].x, hand_landmarks.landmark[0].y, hand_landmarks.landmark[0].z))
+                    
+                        vari = variance(tracker_y)
+                    
+                        x = np.array(tracker_x)
+                        y = np.array(tracker_y)
+
+                        a,b = np.polyfit(x,y,1)
+                        
+                        meanDistance = sum(distance)/len(distance)
+
+                        if abs(max(tracker_x) - min(tracker_x)) >= 1.5 * meanDistance and vari < .002 and abs(a) < .15:
+                            if (sum(tracker_x[0:int(len(tracker_x)/2)]) < sum(tracker_x[int(len(tracker_x)/2):])):
+                                print(len(tracker_x))
+                                print("swipe right")
+                                client.send_message("/swipe", 0)
+                            else:
+                                print(len(tracker_x))
+                                print("swipe left")
+                                client.send_message("/swipe", 1)
+                            tracker_x = []
+                            tracker_y = []
+                            tracker_z = []
+                            distance = []
+                            vari, x, y, a, b, meanDistance, curr_time_swipe = None, None, None, None, None, None, None
                 
         else:
             point_history.append([0, 0])

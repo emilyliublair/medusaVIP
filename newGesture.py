@@ -13,7 +13,6 @@ import mediapipe as mp
 from utils import CvFpsCalc
 from model import KeyPointClassifier
 from model import PointHistoryClassifier
-import test
 
 import math
 from datetime import datetime, timedelta
@@ -23,6 +22,14 @@ from google.protobuf.json_format import MessageToDict
 global client
 PORT = 5005
 IP = "192.168.2.2"
+
+
+thumb = [1, 2, 3, 4]
+pointer = [5, 6, 7, 8]
+middle = [9, 10, 11, 12]
+ring = [13, 14, 15, 16]
+pinky = [17, 18, 19, 20]
+
 
 def get_args():
     parser = argparse.ArgumentParser()
@@ -46,18 +53,29 @@ def get_args():
     return args
 
 
-def detectFront(hand_landmarks, results):
-    for idx, hand_handedness in enumerate(results.multi_handedness):
-        handedness_dict = MessageToDict(hand_handedness)
-        handedness = handedness_dict["classification"][0]["label"]
+def detectOpen(hand_landmarks):
+    firstFingerIsOpen = False
+    secondFingerIsOpen = False
+    thirdFingerIsOpen = False
+    fourthFingerIsOpen = False
 
-    if (handedness == "Right"):
-        if (hand_landmarks.landmark[17].x > hand_landmarks.landmark[13].x > hand_landmarks.landmark[9].x > hand_landmarks.landmark[5].x) and (hand_landmarks.landmark[18].x > hand_landmarks.landmark[14].x > hand_landmarks.landmark[10].x > hand_landmarks.landmark[6].x) and (hand_landmarks.landmark[19].x > hand_landmarks.landmark[15].x > hand_landmarks.landmark[11].x > hand_landmarks.landmark[7].x) and (hand_landmarks.landmark[20].x > hand_landmarks.landmark[16].x > hand_landmarks.landmark[12].x > hand_landmarks.landmark[8].x):
-            return True
+    pseudoFixKeyPoint = hand_landmarks.landmark[6].y
+    if (hand_landmarks.landmark[7].y < pseudoFixKeyPoint and hand_landmarks.landmark[8].y < pseudoFixKeyPoint): firstFingerIsOpen = True
+
+    pseudoFixKeyPoint = hand_landmarks.landmark[10].y
+    if (hand_landmarks.landmark[11].y < pseudoFixKeyPoint and hand_landmarks.landmark[12].y < pseudoFixKeyPoint): firstFingerIsOpen = True
+    
+    pseudoFixKeyPoint = hand_landmarks.landmark[14].y
+    if (hand_landmarks.landmark[15].y < pseudoFixKeyPoint and hand_landmarks.landmark[16].y < pseudoFixKeyPoint): firstFingerIsOpen = True
+
+    pseudoFixKeyPoint = hand_landmarks.landmark[18].y
+    if (hand_landmarks.landmark[19].y < pseudoFixKeyPoint and hand_landmarks.landmark[20].y < pseudoFixKeyPoint): firstFingerIsOpen = True
+
+    if not(firstFingerIsOpen or secondFingerIsOpen or thirdFingerIsOpen or fourthFingerIsOpen):
+        return False
     else:
-        if (hand_landmarks.landmark[17].x < hand_landmarks.landmark[13].x < hand_landmarks.landmark[9].x < hand_landmarks.landmark[5].x) and (hand_landmarks.landmark[18].x < hand_landmarks.landmark[14].x < hand_landmarks.landmark[10].x < hand_landmarks.landmark[6].x) and (hand_landmarks.landmark[19].x < hand_landmarks.landmark[15].x < hand_landmarks.landmark[11].x < hand_landmarks.landmark[7].x) and (hand_landmarks.landmark[20].x < hand_landmarks.landmark[16].x < hand_landmarks.landmark[12].x < hand_landmarks.landmark[8].x):
-            return True
-    return False
+        return True
+
 
 def detectBack(hand_landmarks, results):
     for idx, hand_handedness in enumerate(results.multi_handedness):
@@ -72,8 +90,9 @@ def detectBack(hand_landmarks, results):
             return True
     return False
 
+
 def detectTwirlEnd(hand_landmarks, results):
-    if (detectBack(hand_landmarks, results) and (isNear(hand_landmarks.landmark[8], hand_landmarks.landmark[12]) and isNear(hand_landmarks.landmark[12], hand_landmarks.landmark[16]) and isNear(hand_landmarks.landmark[16], hand_landmarks.landmark[20])) and (hand_landmarks.landmark[4].z > hand_landmarks.landmark[8].z and hand_landmarks.landmark[4].z > hand_landmarks.landmark[12].z and hand_landmarks.landmark[4].z > hand_landmarks.landmark[16].z)):
+    if (detectBack(hand_landmarks, results) and (isNear(hand_landmarks.landmark[8], hand_landmarks.landmark[12], .05) and isNear(hand_landmarks.landmark[12], hand_landmarks.landmark[16], .05) and isNear(hand_landmarks.landmark[16], hand_landmarks.landmark[20]), .05) and (hand_landmarks.landmark[4].z > hand_landmarks.landmark[8].z and hand_landmarks.landmark[4].z > hand_landmarks.landmark[12].z and hand_landmarks.landmark[4].z > hand_landmarks.landmark[16].z)):
         return True
 
 
@@ -81,8 +100,82 @@ def euclideanDistance(a_x, a_y, b_x, b_y):
     return math.sqrt(math.pow((a_x-b_x),2) + math.pow((a_y-b_y),2))
 
 
-def isNear(fingerOne, fingerTwo):
-    return euclideanDistance(fingerOne.x, fingerOne.y, fingerTwo.x, fingerTwo.y) < .05
+def euclideanDistance1D(a, b):
+    return math.sqrt(math.pow((a-b),2))
+
+
+def isNear1D(fingerOne, fingerTwo, threshold):
+    return euclideanDistance1D(fingerOne, fingerTwo) < threshold
+
+
+def isNear(fingerOne, fingerTwo, threshold):
+    return euclideanDistance(fingerOne.x, fingerOne.y, fingerTwo.x, fingerTwo.y) < threshold
+
+
+def detectUpright(hand_landmarks):
+    pointerDistance = math.sqrt((hand_landmarks.landmark[8].x - hand_landmarks.landmark[5].x)**2 + (hand_landmarks.landmark[8].y - hand_landmarks.landmark[5].y)**2)
+    middleDistance = math.sqrt((hand_landmarks.landmark[12].x - hand_landmarks.landmark[9].x)**2 + (hand_landmarks.landmark[12].y - hand_landmarks.landmark[9].y)**2)
+    ringDistance = math.sqrt((hand_landmarks.landmark[16].x - hand_landmarks.landmark[13].x)**2 + (hand_landmarks.landmark[16].y - hand_landmarks.landmark[13].y)**2)
+
+    pointerStraight = hand_landmarks.landmark[8].y < abs(hand_landmarks.landmark[5].y - pointerDistance*4/5)
+    middleStraight = hand_landmarks.landmark[12].y < abs(hand_landmarks.landmark[9].y - middleDistance*4/5)
+    ringStraight = hand_landmarks.landmark[16].y < abs(hand_landmarks.landmark[13].y - ringDistance*4/5)
+
+    if (pointerStraight and middleStraight and ringStraight): return True
+    else: return False
+
+
+def detectFront(hand_landmarks, results):
+    for idx, hand_handedness in enumerate(results.multi_handedness):
+        handedness_dict = MessageToDict(hand_handedness)
+        handedness = handedness_dict["classification"][0]["label"]
+
+    if (handedness == "Right"):
+        if (hand_landmarks.landmark[17].x > hand_landmarks.landmark[13].x > hand_landmarks.landmark[9].x > hand_landmarks.landmark[5].x) and (hand_landmarks.landmark[18].x > hand_landmarks.landmark[14].x > hand_landmarks.landmark[10].x > hand_landmarks.landmark[6].x) and (hand_landmarks.landmark[19].x > hand_landmarks.landmark[15].x > hand_landmarks.landmark[11].x > hand_landmarks.landmark[7].x) and (hand_landmarks.landmark[20].x > hand_landmarks.landmark[16].x > hand_landmarks.landmark[12].x > hand_landmarks.landmark[8].x):
+            return True
+    else:
+        if (hand_landmarks.landmark[17].x < hand_landmarks.landmark[13].x < hand_landmarks.landmark[9].x < hand_landmarks.landmark[5].x) and (hand_landmarks.landmark[18].x < hand_landmarks.landmark[14].x < hand_landmarks.landmark[10].x < hand_landmarks.landmark[6].x) and (hand_landmarks.landmark[19].x < hand_landmarks.landmark[15].x < hand_landmarks.landmark[11].x < hand_landmarks.landmark[7].x) and (hand_landmarks.landmark[20].x < hand_landmarks.landmark[16].x < hand_landmarks.landmark[12].x < hand_landmarks.landmark[8].x):
+            return True
+    return False
+
+
+def detectFlatDown(hand_landmarks, results):
+    for idx, hand_handedness in enumerate(results.multi_handedness):
+        handedness_dict = MessageToDict(hand_handedness)
+        handedness = handedness_dict["classification"][0]["label"]
+    
+    thumb = [1, 2, 3, 4]
+    pointer = [5, 6, 7, 8]
+    middle = [9, 10, 11, 12]
+    ring = [13, 14, 15, 16]
+    pinky = [17, 18, 19, 20]
+
+    hand = [thumb, pointer, middle, ring, pinky]
+
+
+    for i in hand:
+        for j in i:
+            if hand_landmarks.landmark[0].z <= hand_landmarks.landmark[j].z: # determine behind
+                return False
+            if not(isNear1D(hand_landmarks.landmark[0].y, hand_landmarks.landmark[j].y, .2)): # determine flat
+                return False
+
+    if (handedness == "Right"):
+        if (hand_landmarks.landmark[17].x > hand_landmarks.landmark[13].x > hand_landmarks.landmark[9].x > hand_landmarks.landmark[5].x) and (hand_landmarks.landmark[18].x > hand_landmarks.landmark[14].x > hand_landmarks.landmark[10].x > hand_landmarks.landmark[6].x) and (hand_landmarks.landmark[19].x > hand_landmarks.landmark[15].x > hand_landmarks.landmark[11].x > hand_landmarks.landmark[7].x) and (hand_landmarks.landmark[20].x > hand_landmarks.landmark[16].x > hand_landmarks.landmark[12].x > hand_landmarks.landmark[8].x):
+            return True
+    else:
+        if (hand_landmarks.landmark[17].x < hand_landmarks.landmark[13].x < hand_landmarks.landmark[9].x < hand_landmarks.landmark[5].x) and (hand_landmarks.landmark[18].x < hand_landmarks.landmark[14].x < hand_landmarks.landmark[10].x < hand_landmarks.landmark[6].x) and (hand_landmarks.landmark[19].x < hand_landmarks.landmark[15].x < hand_landmarks.landmark[11].x < hand_landmarks.landmark[7].x) and (hand_landmarks.landmark[20].x < hand_landmarks.landmark[16].x < hand_landmarks.landmark[12].x < hand_landmarks.landmark[8].x):
+            return True
+
+    return False 
+
+
+def detectSideways(hand_landmarks, results):
+    for i in range(4):
+        if not(hand_landmarks.landmark[thumb[i]].y >  hand_landmarks.landmark[pointer[i]].y >  hand_landmarks.landmark[middle[i]].y >  hand_landmarks.landmark[ring[i]].y >  hand_landmarks.landmark[pinky[i]].y):
+            return False
+        
+    return True
 
 
 def main():
@@ -144,8 +237,6 @@ def main():
 
     #  ########################################################################
     mode = 0
-    curr_time = datetime.now()
-    twirlCount = 0
 
     while True:
         fps = cvFpsCalc.get()
@@ -191,11 +282,9 @@ def main():
                 # ハンドサイン分類
                 hand_sign_id = keypoint_classifier(pre_processed_landmark_list)
                 point_history.append(landmark_list[8])  # 人差指座標
-                point_history.append(landmark_list[12])
-                point_history.append(landmark_list[16])
-                point_history.append(landmark_list[20])
 
                 # フィンガージェスチャー分類
+                
                 finger_gesture_id = 0
                 point_history_len = len(pre_processed_point_history_list)
                 if point_history_len == (history_length * 2):
@@ -217,21 +306,10 @@ def main():
                     keypoint_classifier_labels[hand_sign_id],
                     point_history_classifier_labels[most_common_fg_id[0][0]],
                 )
-            
-            if (test.detectOpen(hand_landmarks) and test.detectFront(hand_landmarks, results)):
-                curr_time = datetime.now()
-                twirlCount = 0
 
-            if (detectTwirlEnd(hand_landmarks, results) and curr_time + timedelta(seconds = 1) > datetime.now()):
-                print(".")
-                twirlCount +=1
+                print(detectSideways(hand_landmarks, results))
 
-            if twirlCount > 10:
-                client.send_message("/wave", 3)
-                print("twirl now")
-                time.sleep(5)
-                twirlCount = 0
-
+                
         else:
             point_history.append([0, 0])
 
