@@ -79,13 +79,18 @@ def detectBack(hand_landmarks, results):
         if (hand_landmarks.landmark[17].x < hand_landmarks.landmark[13].x < hand_landmarks.landmark[9].x < hand_landmarks.landmark[5].x):
             return True
     else:
-        if (hand_landmarks.landmark[17].x < hand_landmarks.landmark[13].x < hand_landmarks.landmark[9].x < hand_landmarks.landmark[5].x):
+        if (hand_landmarks.landmark[17].x > hand_landmarks.landmark[13].x > hand_landmarks.landmark[9].x > hand_landmarks.landmark[5].x):
             return True
     return False
 
 
 def detectTwirlEnd(hand_landmarks, results):
-    if (detectBack(hand_landmarks, results) and (isNear(hand_landmarks.landmark[8], hand_landmarks.landmark[12], .05) and isNear(hand_landmarks.landmark[12], hand_landmarks.landmark[16], .05) and isNear(hand_landmarks.landmark[16], hand_landmarks.landmark[20]), .05) and (hand_landmarks.landmark[4].z > hand_landmarks.landmark[8].z and hand_landmarks.landmark[4].z > hand_landmarks.landmark[12].z and hand_landmarks.landmark[4].z > hand_landmarks.landmark[16].z)):
+    back = detectBack(hand_landmarks, results)
+    near = isNear(hand_landmarks.landmark[8], hand_landmarks.landmark[12], .06) and isNear(hand_landmarks.landmark[12], hand_landmarks.landmark[16], .06) and isNear(hand_landmarks.landmark[16], hand_landmarks.landmark[20], .06)
+    thumbBack = hand_landmarks.landmark[4].z > hand_landmarks.landmark[8].z and hand_landmarks.landmark[4].z > hand_landmarks.landmark[12].z and hand_landmarks.landmark[4].z > hand_landmarks.landmark[16].z
+    upright = detectUpright(hand_landmarks)
+
+    if (back and near and thumbBack and upright):
         return True
 
 
@@ -94,7 +99,7 @@ def euclideanDistance(a_x, a_y, a_z, b_x, b_y, b_z):
 
 
 def isNear(fingerOne, fingerTwo, threshold):
-    return euclideanDistance(fingerOne.x, fingerOne.y, fingerTwo.x, fingerTwo.y, 0, 0) < threshold
+    return euclideanDistance(fingerOne.x, fingerOne.y, fingerOne.z, fingerTwo.x, fingerTwo.y, fingerTwo.z) < threshold
 
 
 def detectUpright(hand_landmarks):
@@ -190,10 +195,15 @@ def main():
     history_length = 16
     point_history = deque(maxlen=history_length)
     point_history_pointer = deque(maxlen=history_length)
+    point_history_middle = deque(maxlen = history_length)
+    point_history_ring = deque(maxlen = history_length)
 
     # フィンガージェスチャー履歴 ################################################
     finger_gesture_history = deque(maxlen=history_length)
     finger_gesture_history_pointer = deque(maxlen = history_length)
+    finger_gesture_history_middle = deque(maxlen = history_length)
+    finger_gesture_history_ring = deque(maxlen = history_length)
+
 
     #  ########################################################################
     mode = 0
@@ -208,6 +218,8 @@ def main():
     tracker_y = []
     tracker_z = []
     distance = []
+    sent = False
+    stopCount = 0
 
 
     while True:
@@ -247,51 +259,75 @@ def main():
                     landmark_list)
                 pre_processed_point_history_list = pre_process_point_history(
                     debug_image, point_history)
-                pre_processed_landmark_list_pointer = pre_process_landmark(landmark_list)
-                pre_processed_point_history_list = pre_process_point_history(
-                    debug_image, point_history)
                 
+                pre_processed_landmark_list_pointer = pre_process_landmark(landmark_list)
                 pre_processed_point_history_list_pointer = pre_process_point_history(debug_image, point_history_pointer)
+
+                # pre_processed_landmark_list_middle = pre_process_landmark(landmark_list)
+                # pre_processed_point_history_list_middle = pre_process_point_history(debug_image, point_history_middle)
+
+                # pre_processed_landmark_list_ring = pre_process_landmark(landmark_list)
+                # pre_processed_point_history_list_ring = pre_process_point_history(debug_image, point_history_ring)
+
                 # 学習データ保存
                 logging_csv(number, mode, pre_processed_landmark_list,
                             pre_processed_point_history_list)
-                
-                
 
                 # ハンドサイン分類
                 hand_sign_id = keypoint_classifier(pre_processed_landmark_list)
                 hand_sign_id_pointer = keypoint_classifier(pre_processed_landmark_list_pointer)
+                # hand_sign_id_middle = keypoint_classifier(pre_processed_landmark_list_middle)
+                # hand_sign_id_ring = keypoint_classifier(pre_processed_landmark_list_ring)
 
-                # just pointer for waving
+                # just pointer finger
                 point_history_pointer.append(landmark_list[8])
+                # just middle finger
+                # point_history_middle.append(landmark_list[12])
+                # just ring finger
+                # point_history_ring.append(landmark_list[16])
 
-
+                # track all points
                 point_history.append(landmark_list[4])
                 point_history.append(landmark_list[8])
                 point_history.append(landmark_list[12])
                 point_history.append(landmark_list[16])
                 point_history.append(landmark_list[20])  # 人差指座標
 
+
                 # フィンガージェスチャー分類
-                
                 finger_gesture_id = 0
                 point_history_len = len(pre_processed_point_history_list)
                 if point_history_len == (history_length * 2):
-                    finger_gesture_id = point_history_classifier(
-                        pre_processed_point_history_list)
+                    finger_gesture_id = point_history_classifier(pre_processed_point_history_list)
                     
-                finger_gesture_pointer_id = 0
-                point_history_pointer_len = len(pre_processed_point_history_list_pointer)
-                if point_history_pointer_len == (history_length * 2):
-                    finger_gesture_pointer_id = point_history_classifier(pre_processed_point_history_list_pointer)
+                finger_gesture_id_pointer = 0
+                point_history_len_pointer = len(pre_processed_point_history_list_pointer)
+                if point_history_len_pointer == (history_length * 2):
+                    finger_gesture_id_pointer = point_history_classifier(pre_processed_point_history_list_pointer)
+
+                # finger_gesture_id_middle = 0
+                # point_history_len_middle = len(pre_processed_point_history_list_middle)
+                # if point_history_len_middle == (history_length * 2):
+                #     finger_gesture_id_middle = point_history_classifier(pre_processed_point_history_list_middle)
+
+                # finger_gesture_id_ring = 0
+                # point_history_len_ring = len(pre_processed_point_history_list_ring)
+                # if point_history_len_ring == (history_length * 2):
+                #     finger_gesture_id_ring = point_history_classifier(pre_processed_point_history_list_ring)
+
 
                 # 直近検出の中で最多のジェスチャーIDを算出
                 finger_gesture_history.append(finger_gesture_id)
-                most_common_fg_id = Counter(
-                    finger_gesture_history).most_common()
+                most_common_fg_id = Counter(finger_gesture_history).most_common()
                 
-                finger_gesture_history_pointer.append(finger_gesture_pointer_id)
+                finger_gesture_history_pointer.append(finger_gesture_id_pointer)
                 most_common_fg_id_pointer = Counter(finger_gesture_history_pointer).most_common()
+
+                # finger_gesture_history_middle.append(finger_gesture_id_middle)
+                # most_common_fg_id_middle = Counter(finger_gesture_history_middle).most_common()
+
+                # finger_gesture_history_ring.append(finger_gesture_id_ring)
+                # most_common_fg_id_ring = Counter(finger_gesture_history_ring).most_common()
                 
 
                 # 描画
@@ -308,10 +344,7 @@ def main():
             # front = detectFront(hand_landmarks, results)
             # openHand = detectOpen(hand_landmarks)
             # upright = detectUpright(hand_landmarks)
-
-            if (keypoint_classifier_labels[hand_sign_id] == "Open" and detectUpright(hand_landmarks) and detectFront(hand_landmarks, results) and (point_history_classifier_labels[most_common_fg_id_pointer[0][0]]=="Clockwise" or point_history_classifier_labels[most_common_fg_id_pointer[0][0]]=="Counter Clockwise")):
-                print(".")
-                count_wave+=1
+           
 
             if (datetime.now() < curr_time_wave_f and count_wave >= 20):
                 if (not(waving)):
@@ -321,27 +354,40 @@ def main():
                     client.send_message("/wave",2)
                     print("wave detected: BYE")
                 waving = not(waving)
-                time.sleep(5)
                 count_wave = 0
                 curr_time_wave = datetime.now()
                 curr_time_wave_f = curr_time_wave + timedelta(seconds = 5)
+                sent = False
+                time.sleep(5)
                 
-                # SIP0 = [-0.25, 35.5, -2, 126.5, 101, 80.9, -45]
-                # SIP1 = [2.62, 33.5, 0, 127.1, 237.6, 72.6, -57.3]
-                # SIP2 = [-1.4, 29.4, 0, 120, -15, 23.1, -45]
-                # SIP3 = [-14, 30.9, 0, 120, 48.9, 44.6, -45]
-                # SIP4 = [-1.8, 30.9, 0, 120, -78.6, 44.6, -45]
 
             elif (datetime.now() >= curr_time_wave_f):
                 curr_time_wave = datetime.now()
                 curr_time_wave_f = curr_time_wave + timedelta(seconds = 5)
                 count_wave = 0
 
+            if (detectOpen(hand_landmarks) and detectUpright(hand_landmarks) and detectFront(hand_landmarks, results) and (point_history_classifier_labels[most_common_fg_id_pointer[0][0]]=="Clockwise" or point_history_classifier_labels[most_common_fg_id_pointer[0][0]]=="Counter Clockwise")):
+                print(".")
+                count_wave+=1
+
             if waving: # when robot is enabled
-            
-                if (keypoint_classifier_labels[hand_sign_id] == "Open" and detectFront(hand_landmarks, results)):
+                
+                if (detectOpen(hand_landmarks) and detectUpright(hand_landmarks) and detectFront(hand_landmarks, results)):
+                    stopCount += 1
+                    # stop hand gesture
+                    if (not(sent) and stopCount > 10):
+                        client.send_message("/stop", 0)
+                        print("stop")
+                        sent = True
+
+
+                    # twirl hand gesture
                     curr_time_twirl = datetime.now()
                     count_twirl = 0
+
+                else:
+                    stopCount = 0
+                    sent = False
 
                 if (detectTwirlEnd(hand_landmarks, results) and curr_time_twirl + timedelta(seconds = 1) > datetime.now()):
                     print("_")
@@ -349,9 +395,11 @@ def main():
 
                 if count_twirl > 15:
                     client.send_message("/wave", 3)
+                    sent = False
                     print("twirl now")
-                    time.sleep(5)
                     count_twirl = 0
+                    time.sleep(5)
+                    
                 
                 if curr_time_swipe != None and datetime.now() > curr_time_swipe + timedelta(seconds = 3):
                     curr_time_swipe = None
@@ -386,6 +434,7 @@ def main():
                                 print(len(tracker_x))
                                 print("swipe left")
                                 client.send_message("/swipe", 1)
+                            sent = False
                             tracker_x = []
                             tracker_y = []
                             tracker_z = []
