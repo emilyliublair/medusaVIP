@@ -19,6 +19,8 @@ from datetime import datetime, timedelta
 from pythonosc import udp_client
 from google.protobuf.json_format import MessageToDict
 
+from gesture_detection import *
+
 global client
 PORT = 5005
 IP = "192.168.2.2"
@@ -46,101 +48,6 @@ def get_args():
     return args
 
 
-def detectOpen(hand_landmarks):
-    firstFingerIsOpen = False
-    secondFingerIsOpen = False
-    thirdFingerIsOpen = False
-    fourthFingerIsOpen = False
-
-    pseudoFixKeyPoint = hand_landmarks.landmark[6].y
-    if (hand_landmarks.landmark[7].y < pseudoFixKeyPoint and hand_landmarks.landmark[8].y < pseudoFixKeyPoint): firstFingerIsOpen = True
-
-    pseudoFixKeyPoint = hand_landmarks.landmark[10].y
-    if (hand_landmarks.landmark[11].y < pseudoFixKeyPoint and hand_landmarks.landmark[12].y < pseudoFixKeyPoint): firstFingerIsOpen = True
-    
-    pseudoFixKeyPoint = hand_landmarks.landmark[14].y
-    if (hand_landmarks.landmark[15].y < pseudoFixKeyPoint and hand_landmarks.landmark[16].y < pseudoFixKeyPoint): firstFingerIsOpen = True
-
-    pseudoFixKeyPoint = hand_landmarks.landmark[18].y
-    if (hand_landmarks.landmark[19].y < pseudoFixKeyPoint and hand_landmarks.landmark[20].y < pseudoFixKeyPoint): firstFingerIsOpen = True
-
-    if not(firstFingerIsOpen or secondFingerIsOpen or thirdFingerIsOpen or fourthFingerIsOpen):
-        return False
-    else:
-        return True
-
-
-def detectBack(hand_landmarks, results):
-    for idx, hand_handedness in enumerate(results.multi_handedness):
-        handedness_dict = MessageToDict(hand_handedness)
-        handedness = handedness_dict["classification"][0]["label"]
-
-    if (handedness == "Right"):
-        if (hand_landmarks.landmark[17].x < hand_landmarks.landmark[13].x < hand_landmarks.landmark[9].x < hand_landmarks.landmark[5].x):
-            return True
-    else:
-        if (hand_landmarks.landmark[17].x > hand_landmarks.landmark[13].x > hand_landmarks.landmark[9].x > hand_landmarks.landmark[5].x):
-            return True
-    return False
-
-
-def detectTwirlEnd(hand_landmarks, results):
-    back = detectBack(hand_landmarks, results)
-    near = isNear(hand_landmarks.landmark[8], hand_landmarks.landmark[12], .06) and isNear(hand_landmarks.landmark[12], hand_landmarks.landmark[16], .06) and isNear(hand_landmarks.landmark[16], hand_landmarks.landmark[20], .06)
-    thumbBack = hand_landmarks.landmark[4].z > hand_landmarks.landmark[8].z and hand_landmarks.landmark[4].z > hand_landmarks.landmark[12].z and hand_landmarks.landmark[4].z > hand_landmarks.landmark[16].z
-    upright = detectUpright(hand_landmarks)
-
-    if (back and near and thumbBack and upright):
-        return True
-
-
-def euclideanDistance(a_x, a_y, a_z, b_x, b_y, b_z):
-    return math.sqrt(math.pow((a_x-b_x),2) + math.pow((a_y-b_y),2) + math.pow((a_z-b_z), 2))
-
-
-def isNear(fingerOne, fingerTwo, threshold):
-    return euclideanDistance(fingerOne.x, fingerOne.y, fingerOne.z, fingerTwo.x, fingerTwo.y, fingerTwo.z) < threshold
-
-
-def detectUpright(hand_landmarks):
-    pointerDistance = math.sqrt((hand_landmarks.landmark[8].x - hand_landmarks.landmark[5].x)**2 + (hand_landmarks.landmark[8].y - hand_landmarks.landmark[5].y)**2)
-    middleDistance = math.sqrt((hand_landmarks.landmark[12].x - hand_landmarks.landmark[9].x)**2 + (hand_landmarks.landmark[12].y - hand_landmarks.landmark[9].y)**2)
-    ringDistance = math.sqrt((hand_landmarks.landmark[16].x - hand_landmarks.landmark[13].x)**2 + (hand_landmarks.landmark[16].y - hand_landmarks.landmark[13].y)**2)
-
-    pointerStraight = hand_landmarks.landmark[8].y < abs(hand_landmarks.landmark[5].y - pointerDistance*4/5)
-    middleStraight = hand_landmarks.landmark[12].y < abs(hand_landmarks.landmark[9].y - middleDistance*4/5)
-    ringStraight = hand_landmarks.landmark[16].y < abs(hand_landmarks.landmark[13].y - ringDistance*4/5)
-
-    if (pointerStraight and middleStraight and ringStraight): return True
-    else: return False
-
-
-def detectFront(hand_landmarks, results):
-    for idx, hand_handedness in enumerate(results.multi_handedness):
-        handedness_dict = MessageToDict(hand_handedness)
-        handedness = handedness_dict["classification"][0]["label"]
-
-    if (handedness == "Right"):
-        if (hand_landmarks.landmark[17].x > hand_landmarks.landmark[13].x > hand_landmarks.landmark[9].x > hand_landmarks.landmark[5].x) and (hand_landmarks.landmark[18].x > hand_landmarks.landmark[14].x > hand_landmarks.landmark[10].x > hand_landmarks.landmark[6].x) and (hand_landmarks.landmark[19].x > hand_landmarks.landmark[15].x > hand_landmarks.landmark[11].x > hand_landmarks.landmark[7].x) and (hand_landmarks.landmark[20].x > hand_landmarks.landmark[16].x > hand_landmarks.landmark[12].x > hand_landmarks.landmark[8].x):
-            return True
-    else:
-        if (hand_landmarks.landmark[17].x < hand_landmarks.landmark[13].x < hand_landmarks.landmark[9].x < hand_landmarks.landmark[5].x) and (hand_landmarks.landmark[18].x < hand_landmarks.landmark[14].x < hand_landmarks.landmark[10].x < hand_landmarks.landmark[6].x) and (hand_landmarks.landmark[19].x < hand_landmarks.landmark[15].x < hand_landmarks.landmark[11].x < hand_landmarks.landmark[7].x) and (hand_landmarks.landmark[20].x < hand_landmarks.landmark[16].x < hand_landmarks.landmark[12].x < hand_landmarks.landmark[8].x):
-            return True
-    return False
-
-
-def variance(data_y):
-     # Number of observations
-     n = len(data_y)
-     # Mean of the data
-     mean = sum(data_y) / n
-     # Square deviations
-     deviations = [(y - mean) ** 2 for y in data_y]
-     # Variance
-     variance = sum(deviations) / n
-     return variance
-
-
 def main():
     # 引数解析 #################################################################
     args = get_args()
@@ -164,7 +71,7 @@ def main():
     mp_hands = mp.solutions.hands
     hands = mp_hands.Hands(
         static_image_mode=use_static_image_mode,
-        max_num_hands=1,
+        max_num_hands=2,
         min_detection_confidence=min_detection_confidence,
         min_tracking_confidence=min_tracking_confidence,
     )
@@ -207,19 +114,26 @@ def main():
 
     #  ########################################################################
     mode = 0
+
+    # wave variables
     count_wave = 0
-    count_twirl = 0
-    curr_time_wave = datetime.now()
-    curr_time_twirl = datetime.now()
-    curr_time_wave_f = curr_time_wave + timedelta(seconds = 5)
+    curr_time_wave = None
     waving = False
-    curr_time_swipe = datetime.now()
+
+    # twirl variables
+    count_twirl = 0
+    curr_time_twirl = None
+
+    # swipe variables
+    curr_time_swipe = None
     tracker_x = []
     tracker_y = []
     tracker_z = []
     distance = []
-    sent = False
-    stopCount = 0
+
+    # stop/go variables
+    count_go = 0
+    curr_time_go = None
 
 
     while True:
@@ -340,13 +254,15 @@ def main():
                     keypoint_classifier_labels[hand_sign_id],
                     point_history_classifier_labels[most_common_fg_id[0][0]],
                 )
-
-            # front = detectFront(hand_landmarks, results)
-            # openHand = detectOpen(hand_landmarks)
-            # upright = detectUpright(hand_landmarks)
            
+            if detectBasic(hand_landmarks, results) and (point_history_classifier_labels[most_common_fg_id_pointer[0][0]]=="Clockwise" or point_history_classifier_labels[most_common_fg_id_pointer[0][0]]=="Counter Clockwise"):
+                print(".")
+                curr_time_wave = datetime.now()
+                count_wave+=1
+            elif curr_time_wave is not None and curr_time_wave + timedelta(seconds = 1) < datetime.now():
+                count_wave = 0
 
-            if (datetime.now() < curr_time_wave_f and count_wave >= 20):
+            if curr_time_wave is not None and count_wave > 20:
                 if (not(waving)):
                     client.send_message("/wave",1)
                     print("wave detected: HI")
@@ -355,53 +271,44 @@ def main():
                     print("wave detected: BYE")
                 waving = not(waving)
                 count_wave = 0
-                curr_time_wave = datetime.now()
-                curr_time_wave_f = curr_time_wave + timedelta(seconds = 5)
-                sent = False
+                curr_time_wave = None
                 time.sleep(5)
-                
 
-            elif (datetime.now() >= curr_time_wave_f):
-                curr_time_wave = datetime.now()
-                curr_time_wave_f = curr_time_wave + timedelta(seconds = 5)
-                count_wave = 0
-
-            if (detectOpen(hand_landmarks) and detectUpright(hand_landmarks) and detectFront(hand_landmarks, results) and (point_history_classifier_labels[most_common_fg_id_pointer[0][0]]=="Clockwise" or point_history_classifier_labels[most_common_fg_id_pointer[0][0]]=="Counter Clockwise")):
-                print(".")
-                count_wave+=1
 
             if waving: # when robot is enabled
-                
-                if (detectOpen(hand_landmarks) and detectUpright(hand_landmarks) and detectFront(hand_landmarks, results)):
-                    stopCount += 1
-                    # stop hand gesture
-                    if (not(sent) and stopCount > 10):
-                        client.send_message("/stop", 0)
-                        print("stop")
-                        sent = True
-
-
+                ### initial state for twirl and go/stop
+                if (detectBasic(hand_landmarks, results)):
                     # twirl hand gesture
                     curr_time_twirl = datetime.now()
                     count_twirl = 0
 
-                else:
-                    stopCount = 0
-                    sent = False
+                    # go/stop hand gesture
+                    curr_time_go = datetime.now()
+                    count_go = 0
 
-                if (detectTwirlEnd(hand_landmarks, results) and curr_time_twirl + timedelta(seconds = 1) > datetime.now()):
+                ### twirl
+                if curr_time_twirl is not None and detectTwirlEnd(hand_landmarks, results) and curr_time_twirl + timedelta(seconds = 1) > datetime.now():
                     print("_")
                     count_twirl +=1
 
                 if count_twirl > 15:
                     client.send_message("/wave", 3)
-                    sent = False
                     print("twirl now")
                     count_twirl = 0
                     time.sleep(5)
-                    
+
+                ### go/stop
+                if curr_time_go is not None and detectFlat(hand_landmarks, results) and curr_time_go + timedelta(seconds = 3) > datetime.now():
+                    count_go += 1
+
+                if count_go >= 10:
+                    print("go/stop")
+                    count_go = 0
+                    curr_time_go = None
                 
-                if curr_time_swipe != None and datetime.now() > curr_time_swipe + timedelta(seconds = 3):
+                    
+                ### swipe
+                if curr_time_swipe is not None and datetime.now() > curr_time_swipe + timedelta(seconds = 3):
                     curr_time_swipe = None
                     tracker_x = []
                     tracker_y = []
@@ -414,7 +321,7 @@ def main():
                         tracker_x.append(hand_landmarks.landmark[8].x)
                         tracker_y.append(hand_landmarks.landmark[8].y)
                         tracker_z.append(hand_landmarks.landmark[8].z)
-                        distance.append(euclideanDistance(hand_landmarks.landmark[12].x, hand_landmarks.landmark[12].y, hand_landmarks.landmark[12].z, hand_landmarks.landmark[0].x, hand_landmarks.landmark[0].y, hand_landmarks.landmark[0].z))
+                        distance.append(euclideanDistance(hand_landmarks.landmark[12], hand_landmarks.landmark[0]))
                     
                         vari = variance(tracker_y)
                     
@@ -434,7 +341,6 @@ def main():
                                 print(len(tracker_x))
                                 print("swipe left")
                                 client.send_message("/swipe", 1)
-                            sent = False
                             tracker_x = []
                             tracker_y = []
                             tracker_z = []
