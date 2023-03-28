@@ -11,22 +11,22 @@ def detectOpen(hand_landmarks):
     thirdFingerIsOpen = False
     fourthFingerIsOpen = False
 
-    pseudoFixKeyPoint = hand_landmarks.landmark[6].y
-    if (hand_landmarks.landmark[7].y < pseudoFixKeyPoint and hand_landmarks.landmark[8].y < pseudoFixKeyPoint): firstFingerIsOpen = True
+    kp = hand_landmarks.landmark[6].y
+    if (hand_landmarks.landmark[7].y < kp and hand_landmarks.landmark[8].y < kp): firstFingerIsOpen = True
 
-    pseudoFixKeyPoint = hand_landmarks.landmark[10].y
-    if (hand_landmarks.landmark[11].y < pseudoFixKeyPoint and hand_landmarks.landmark[12].y < pseudoFixKeyPoint): firstFingerIsOpen = True
+    kp = hand_landmarks.landmark[10].y
+    if (hand_landmarks.landmark[11].y < kp and hand_landmarks.landmark[12].y < kp): secondFingerIsOpen = True
     
-    pseudoFixKeyPoint = hand_landmarks.landmark[14].y
-    if (hand_landmarks.landmark[15].y < pseudoFixKeyPoint and hand_landmarks.landmark[16].y < pseudoFixKeyPoint): firstFingerIsOpen = True
+    kp = hand_landmarks.landmark[14].y
+    if (hand_landmarks.landmark[15].y < kp and hand_landmarks.landmark[16].y < kp): thirdFingerIsOpen = True
 
-    pseudoFixKeyPoint = hand_landmarks.landmark[18].y
-    if (hand_landmarks.landmark[19].y < pseudoFixKeyPoint and hand_landmarks.landmark[20].y < pseudoFixKeyPoint): firstFingerIsOpen = True
+    kp = hand_landmarks.landmark[18].y
+    if (hand_landmarks.landmark[19].y < kp and hand_landmarks.landmark[20].y < kp): fourthFingerIsOpen = True
 
-    if not(firstFingerIsOpen or secondFingerIsOpen or thirdFingerIsOpen or fourthFingerIsOpen):
-        return False
-    else:
+    if firstFingerIsOpen and secondFingerIsOpen and thirdFingerIsOpen and fourthFingerIsOpen:
         return True
+    else:
+        return False
 
 
 def detectBack(hand_landmarks, results):
@@ -160,5 +160,32 @@ def sameLine(fingerOne, fingerTwo, fingerThree, fingerFour, fingerFive, axis, le
     #         return True
 
 
+def detectNear1D(fingerOne, fingerTwo, threshold):
+    return abs(fingerOne - fingerTwo) < threshold
+
+
 def detectBasic(hand_landmarks, results):
     return detectStraight(hand_landmarks) and detectUpright(hand_landmarks) and detectFront(hand_landmarks, results)
+
+
+def detectSideways(hand_landmarks, results):
+    poseCheck = hand_landmarks.landmark[5].y < hand_landmarks.landmark[9].y < hand_landmarks.landmark[13].y < hand_landmarks.landmark[17].y
+    xAxisCheck = detectNear1D(hand_landmarks.landmark[5].x, hand_landmarks.landmark[9].x, .02) and detectNear1D(hand_landmarks.landmark[9].x, hand_landmarks.landmark[13].x, .02) and detectNear1D(hand_landmarks.landmark[13].x, hand_landmarks.landmark[17].x, .02) and detectNear1D(hand_landmarks.landmark[5].x, hand_landmarks.landmark[17].x, .02)
+
+    return poseCheck and xAxisCheck
+
+
+def detectClosed(hand_landmarks, results):
+    firstFingerClosed = False
+    secondFingerClosed = False
+    thirdFingerClosed = False
+    fourthFingerClosed = False
+
+    if hand_landmarks.landmark[8].y > hand_landmarks.landmark[5].y and hand_landmarks.landmark[6].y < hand_landmarks.landmark[5].y: firstFingerClosed = True
+    if hand_landmarks.landmark[12].y > hand_landmarks.landmark[9].y and hand_landmarks.landmark[10].y < hand_landmarks.landmark[9].y: secondFingerClosed = True
+    if hand_landmarks.landmark[16].y > hand_landmarks.landmark[13].y and hand_landmarks.landmark[14].y < hand_landmarks.landmark[13].y: thirdFingerClosed = True
+    if hand_landmarks.landmark[20].y > hand_landmarks.landmark[17].y and hand_landmarks.landmark[18].y < hand_landmarks.landmark[17].y: fourthFingerClosed = True
+
+    if firstFingerClosed and secondFingerClosed and thirdFingerClosed and fourthFingerClosed: return True
+    else: return False
+    

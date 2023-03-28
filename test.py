@@ -101,24 +101,12 @@ def main():
     # 座標履歴 #################################################################
     history_length = 16
     point_history = deque(maxlen=history_length)
-    point_history_pointer = deque(maxlen=history_length)
-    point_history_middle = deque(maxlen = history_length)
-    point_history_ring = deque(maxlen = history_length)
 
     # フィンガージェスチャー履歴 ################################################
     finger_gesture_history = deque(maxlen=history_length)
-    finger_gesture_history_pointer = deque(maxlen = history_length)
-    finger_gesture_history_middle = deque(maxlen = history_length)
-    finger_gesture_history_ring = deque(maxlen = history_length)
-
 
     #  ########################################################################
     mode = 0
-
-    # wave variables
-    count_wave = 0
-    curr_time_wave = None
-    waving = False
 
     # twirl variables
     count_twirl = 0
@@ -133,7 +121,7 @@ def main():
 
     # stop/go variables
     count_go = 0
-    curr_time_go = None
+    go = False
 
 
     while True:
@@ -174,31 +162,12 @@ def main():
                 pre_processed_point_history_list = pre_process_point_history(
                     debug_image, point_history)
                 
-                pre_processed_landmark_list_pointer = pre_process_landmark(landmark_list)
-                pre_processed_point_history_list_pointer = pre_process_point_history(debug_image, point_history_pointer)
-
-                # pre_processed_landmark_list_middle = pre_process_landmark(landmark_list)
-                # pre_processed_point_history_list_middle = pre_process_point_history(debug_image, point_history_middle)
-
-                # pre_processed_landmark_list_ring = pre_process_landmark(landmark_list)
-                # pre_processed_point_history_list_ring = pre_process_point_history(debug_image, point_history_ring)
-
                 # 学習データ保存
                 logging_csv(number, mode, pre_processed_landmark_list,
                             pre_processed_point_history_list)
 
                 # ハンドサイン分類
                 hand_sign_id = keypoint_classifier(pre_processed_landmark_list)
-                hand_sign_id_pointer = keypoint_classifier(pre_processed_landmark_list_pointer)
-                # hand_sign_id_middle = keypoint_classifier(pre_processed_landmark_list_middle)
-                # hand_sign_id_ring = keypoint_classifier(pre_processed_landmark_list_ring)
-
-                # just pointer finger
-                point_history_pointer.append(landmark_list[8])
-                # just middle finger
-                # point_history_middle.append(landmark_list[12])
-                # just ring finger
-                # point_history_ring.append(landmark_list[16])
 
                 # track all points
                 point_history.append(landmark_list[4])
@@ -213,36 +182,11 @@ def main():
                 point_history_len = len(pre_processed_point_history_list)
                 if point_history_len == (history_length * 2):
                     finger_gesture_id = point_history_classifier(pre_processed_point_history_list)
-                    
-                finger_gesture_id_pointer = 0
-                point_history_len_pointer = len(pre_processed_point_history_list_pointer)
-                if point_history_len_pointer == (history_length * 2):
-                    finger_gesture_id_pointer = point_history_classifier(pre_processed_point_history_list_pointer)
-
-                # finger_gesture_id_middle = 0
-                # point_history_len_middle = len(pre_processed_point_history_list_middle)
-                # if point_history_len_middle == (history_length * 2):
-                #     finger_gesture_id_middle = point_history_classifier(pre_processed_point_history_list_middle)
-
-                # finger_gesture_id_ring = 0
-                # point_history_len_ring = len(pre_processed_point_history_list_ring)
-                # if point_history_len_ring == (history_length * 2):
-                #     finger_gesture_id_ring = point_history_classifier(pre_processed_point_history_list_ring)
-
+                
 
                 # 直近検出の中で最多のジェスチャーIDを算出
                 finger_gesture_history.append(finger_gesture_id)
                 most_common_fg_id = Counter(finger_gesture_history).most_common()
-                
-                finger_gesture_history_pointer.append(finger_gesture_id_pointer)
-                most_common_fg_id_pointer = Counter(finger_gesture_history_pointer).most_common()
-
-                # finger_gesture_history_middle.append(finger_gesture_id_middle)
-                # most_common_fg_id_middle = Counter(finger_gesture_history_middle).most_common()
-
-                # finger_gesture_history_ring.append(finger_gesture_id_ring)
-                # most_common_fg_id_ring = Counter(finger_gesture_history_ring).most_common()
-                
 
                 # 描画
                 debug_image = draw_bounding_rect(use_brect, debug_image, brect)
@@ -254,98 +198,75 @@ def main():
                     keypoint_classifier_labels[hand_sign_id],
                     point_history_classifier_labels[most_common_fg_id[0][0]],
                 )
-           
-            if detectBasic(hand_landmarks, results) and (point_history_classifier_labels[most_common_fg_id_pointer[0][0]]=="Clockwise" or point_history_classifier_labels[most_common_fg_id_pointer[0][0]]=="Counter Clockwise"):
-                print(".")
-                curr_time_wave = datetime.now()
-                count_wave+=1
-            elif curr_time_wave is not None and curr_time_wave + timedelta(seconds = 1) < datetime.now():
-                count_wave = 0
 
-            if curr_time_wave is not None and count_wave > 20:
-                if (not(waving)):
-                    client.send_message("/wave",1)
-                    print("wave detected: HI")
-                else:
-                    client.send_message("/wave",2)
-                    print("wave detected: BYE")
-                waving = not(waving)
-                count_wave = 0
-                curr_time_wave = None
+            ### go/stop hand gesture
+            if (detectClosed(hand_landmarks, results)):
+                count_go += 1
+            else:
+                count_go = 0
+
+            if (count_go > 10):
+                go = not(go)
+                print("stop/go detected")
                 time.sleep(5)
+                count_go = 0
 
 
-            if waving: # when robot is enabled
-                ### initial state for twirl and go/stop
-                if (detectBasic(hand_landmarks, results)):
-                    # twirl hand gesture
-                    curr_time_twirl = datetime.now()
-                    count_twirl = 0
+            ### initial state for twirl
+            if (detectBasic(hand_landmarks, results)):
+                curr_time_twirl = datetime.now()
+                count_twirl = 0
+            
 
-                    # go/stop hand gesture
-                    curr_time_go = datetime.now()
-                    count_go = 0
+            ### twirl
+            if curr_time_twirl is not None and detectTwirlEnd(hand_landmarks, results) and curr_time_twirl + timedelta(seconds = 2) > datetime.now():
+                print("_")
+                count_twirl +=1
 
-                ### twirl
-                if curr_time_twirl is not None and detectTwirlEnd(hand_landmarks, results) and curr_time_twirl + timedelta(seconds = 1) > datetime.now():
-                    print("_")
-                    count_twirl +=1
-
-                if count_twirl > 15:
-                    client.send_message("/wave", 3)
-                    print("twirl now")
-                    count_twirl = 0
-                    time.sleep(5)
-
-                ### go/stop
-                if curr_time_go is not None and detectFlat(hand_landmarks, results) and curr_time_go + timedelta(seconds = 3) > datetime.now():
-                    count_go += 1
-
-                if count_go >= 10:
-                    print("go/stop")
-                    count_go = 0
-                    curr_time_go = None
+            if count_twirl > 15:
+                client.send_message("/wave", 3)
+                print("twirl now")
+                time.sleep(5)
+                count_twirl = 0
+            
+        
+            ### swipe
+            if curr_time_swipe is not None and datetime.now() > curr_time_swipe + timedelta(seconds = 3):
+                curr_time_swipe = None
+                tracker_x = []
+                tracker_y = []
+                tracker_z = []
+            
+            else:
+                if detectSideways(hand_landmarks, results):
+                    if len(tracker_x) == 0:
+                        curr_time_swipe = datetime.now() 
+                    tracker_x.append(hand_landmarks.landmark[8].x)
+                    tracker_y.append(hand_landmarks.landmark[8].y)
+                    tracker_z.append(hand_landmarks.landmark[8].z)
+                    distance.append(euclideanDistance(hand_landmarks.landmark[12], hand_landmarks.landmark[0]))
                 
-                    
-                ### swipe
-                if curr_time_swipe is not None and datetime.now() > curr_time_swipe + timedelta(seconds = 3):
-                    curr_time_swipe = None
-                    tracker_x = []
-                    tracker_y = []
-                    tracker_z = []
+                    vari = variance(tracker_y)
                 
-                else:
-                    if keypoint_classifier_labels[hand_sign_id] == "Sideways":
-                        if len(tracker_x) == 0:
-                            curr_time_swipe = datetime.now() 
-                        tracker_x.append(hand_landmarks.landmark[8].x)
-                        tracker_y.append(hand_landmarks.landmark[8].y)
-                        tracker_z.append(hand_landmarks.landmark[8].z)
-                        distance.append(euclideanDistance(hand_landmarks.landmark[12], hand_landmarks.landmark[0]))
-                    
-                        vari = variance(tracker_y)
-                    
-                        x = np.array(tracker_x)
-                        y = np.array(tracker_y)
+                    x = np.array(tracker_x)
+                    y = np.array(tracker_y)
 
-                        a,b = np.polyfit(x,y,1)
-                        
-                        meanDistance = sum(distance)/len(distance)
+                    a,b = np.polyfit(x,y,1)
+                    
+                    meanDistance = sum(distance)/len(distance)
 
-                        if abs(max(tracker_x) - min(tracker_x)) >= 1.5 * meanDistance and vari < .002 and abs(a) < .15:
-                            if (sum(tracker_x[0:int(len(tracker_x)/2)]) < sum(tracker_x[int(len(tracker_x)/2):])):
-                                print(len(tracker_x))
-                                print("swipe right")
-                                client.send_message("/swipe", 0)
-                            else:
-                                print(len(tracker_x))
-                                print("swipe left")
-                                client.send_message("/swipe", 1)
-                            tracker_x = []
-                            tracker_y = []
-                            tracker_z = []
-                            distance = []
-                            vari, x, y, a, b, meanDistance, curr_time_swipe = None, None, None, None, None, None, None
+                    if abs(max(tracker_x) - min(tracker_x)) >= 1.5 * meanDistance and vari < .002 and abs(a) < .15:
+                        if (sum(tracker_x[0:int(len(tracker_x)/2)]) < sum(tracker_x[int(len(tracker_x)/2):])):
+                            print("swipe right")
+                            client.send_message("/swipe", 0)
+                        else:
+                            print("swipe left")
+                            client.send_message("/swipe", 1)
+                        tracker_x = []
+                        tracker_y = []
+                        tracker_z = []
+                        distance = []
+                        vari, x, y, a, b, meanDistance, curr_time_swipe = None, None, None, None, None, None, None
                 
         else:
             point_history.append([0, 0])
